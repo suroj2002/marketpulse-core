@@ -1,0 +1,14 @@
+# Muhit o'zgaruvchilari (maxfiy tokenlar)
+.env
+
+# Virtual muhit
+.venv/
+
+# Python kesh fayllari
+__pycache__/
+*.pyc
+
+# Ma'lumotlar bazasi, Excel hisobotlar va loglar
+*.db
+*.xlsx
+logs/

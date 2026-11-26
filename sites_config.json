@@ -1,0 +1,23 @@
+{
+  "books.toscrape.com": {
+    "turi": "katalog",
+    "kartochka": "article.product_pod",
+    "nomi": "h3 a",
+    "nomi_atribut": "title",
+    "havola": "h3 a",
+    "narxi": "p.price_color",
+    "valyuta": "£",
+    "reytingi": "p.star-rating",
+    "keyingi_sahifa": "li.next a"
+  },
+  "uzum.uz": {
+    "turi": "katalog",
+    "yakka_url_belgi": "/product/",
+    "kartochka": "[data-test-id='item__product-card'], [data-test-id='product-card--default']",
+    "nomi": "[data-test-id='text__product-name'], h1",
+    "havola": "a",
+    "narxi": "[data-test-id='text__price'], [data-test-id='text__product-price']",
+    "valyuta": "so'm",
+    "reytingi": "[data-test-id='text__rating']"
+  }
+}

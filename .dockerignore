@@ -1,0 +1,10 @@
+# Maxfiy sozlamalar va virtual muhit Docker obraziga kirmasligi shart
+.env
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.xlsx
+logs/
+.git/
+.gitignore
