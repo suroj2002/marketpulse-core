@@ -9,8 +9,15 @@ Zero-Leak qoidasi:
 """
 
 import math
+from pathlib import Path
+import tempfile
 from typing import Any
+import uuid
 
+from analytics import hisobot_matnini_yaratish
+from database import bazani_tayyorlash, mahsulotlarni_saqlash
+from excel_report import excel_hisobot_yaratish
+from locales import t
 from utils import hozirgi_vaqt
 
 
@@ -204,6 +211,126 @@ def demo_kam_qoldiq_tovarlar(
         for item in _DEMO_TOVARLAR
         if int(item["qoldiq"]) < int(chegara)
     ]
+
+
+_DEMO_MANBALAR: tuple[dict[str, Any], ...] = (
+    {
+        "id": 201,
+        "url": "https://uzum.uz/uz/product/demo-airpods-store-a-9001011",
+    },
+    {
+        "id": 202,
+        "url": "https://olcha.uz/uz/product/demo-powerbank-xiaomi-20000",
+    },
+)
+
+# Demo tahlil va Excel hisobot uchun eski -> yangi narx tarixiga ega namunaviy yozuvlar
+_DEMO_MONITORING_TARIXI: tuple[dict[str, Any], ...] = (
+    {
+        "url": "https://uzum.uz/uz/product/demo-airpods-pro-2-900101",
+        "nomi_uz": "Simsiz quloqchin AirPods Pro 2 (ANC, MagSafe)",
+        "nomi_ru": "Беспроводные наушники AirPods Pro 2 (ANC, MagSafe)",
+        "eski_narx": 379000.0,
+        "yangi_narx": 349000.0,
+        "valyuta": "so'm",
+        "reyting": 4.9,
+        "qoldiq": 18,
+    },
+    {
+        "url": "https://uzum.uz/uz/product/demo-powerbank-xiaomi-900102",
+        "nomi_uz": "Powerbank Xiaomi 20 000 mAh (22.5W tez zaryad)",
+        "nomi_ru": "Повербанк Xiaomi 20 000 мАч (быстрая зарядка 22.5W)",
+        "eski_narx": 270000.0,
+        "yangi_narx": 285000.0,
+        "valyuta": "so'm",
+        "reyting": 4.8,
+        "qoldiq": 3,
+    },
+    {
+        "url": "https://uzum.uz/uz/product/demo-smartwatch-amoled-900103",
+        "nomi_uz": "Smart-soat AMOLED Ultra Fit (GPS, suvga chidamli)",
+        "nomi_ru": "Смарт-часы AMOLED Ultra Fit (GPS, влагозащита)",
+        "eski_narx": 590000.0,
+        "yangi_narx": 590000.0,
+        "valyuta": "so'm",
+        "reyting": 4.7,
+        "qoldiq": 9,
+    },
+    {
+        "url": "https://uzum.uz/uz/product/demo-robot-vacuum-s7-900104",
+        "nomi_uz": "Robot-changyutgich SmartClean S7 (Wi-Fi, nam tozalash)",
+        "nomi_ru": "Робот-пылесос SmartClean S7 (Wi-Fi, влажная уборка)",
+        "eski_narx": 2050000.0,
+        "yangi_narx": 1890000.0,
+        "valyuta": "so'm",
+        "reyting": 4.9,
+        "qoldiq": 2,
+    },
+)
+
+
+def demo_manbalar_royxati() -> list[dict[str, Any]]:
+    """Demo-rejim uchun 2 ta namunaviy veb-manbani qaytaradi."""
+    return [dict(item) for item in _DEMO_MANBALAR]
+
+
+def demo_hisobot_tayyorlash(
+    lang: str = "uz",
+    tz_nomi: str | None = None,
+) -> tuple[str, str]:
+    """
+    Real SQLite bazasiga, Uzum API ga va Playwright'ga mutlaqo tegmasdan,
+    vaqtinchalik izolyatsiya qilingan SQLite fayli orqali haqiqiy tahlil matni
+    va dizaynli Demo Excel (`.xlsx`) faylini yaratadi.
+
+    Qaytaradi:
+        (hisobot_matni, excel_fayl_yoli)
+    """
+    til = _til_kaliti(lang)
+    sana = hozirgi_vaqt(lang=til, tz_nomi=tz_nomi).strftime("%Y-%m-%d")
+    prefiks = t("excel_filename_prefix", til)
+    excel_yoli = str(
+        Path(tempfile.gettempdir()) / f"demo_{prefiks}_{sana}_{uuid.uuid4().hex[:6]}.xlsx"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="marketpulse_demo_") as vaqtincha_papka:
+        demo_db = str(Path(vaqtincha_papka) / "demo.db")
+        bazani_tayyorlash(demo_db)
+
+        birinchi_qadam = [
+            {
+                "nomi": item[f"nomi_{til}"],
+                "narx": item["eski_narx"],
+                "valyuta": item["valyuta"],
+                "reyting": item["reyting"],
+                "url": item["url"],
+                "qoldiq": item["qoldiq"],
+            }
+            for item in _DEMO_MONITORING_TARIXI
+        ]
+        ikkinchi_qadam = [
+            {
+                "nomi": item[f"nomi_{til}"],
+                "narx": item["yangi_narx"],
+                "valyuta": item["valyuta"],
+                "reyting": item["reyting"],
+                "url": item["url"],
+                "qoldiq": item["qoldiq"],
+            }
+            for item in _DEMO_MONITORING_TARIXI
+        ]
+        mahsulotlarni_saqlash(birinchi_qadam, db_yoli=demo_db)
+        mahsulotlarni_saqlash(ikkinchi_qadam, db_yoli=demo_db)
+
+        hisobot_matni = hisobot_matnini_yaratish(db_yoli=demo_db, lang=til, tz_nomi=tz_nomi)
+        excel_hisobot_yaratish(
+            db_yoli=demo_db,
+            chiqish_fayli=excel_yoli,
+            lang=til,
+            tz_nomi=tz_nomi,
+        )
+
+    return hisobot_matni, excel_yoli
 
 
 def demo_raqobatchilarni_olish(

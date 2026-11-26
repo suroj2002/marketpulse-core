@@ -65,9 +65,11 @@ from database import (
     urlni_tozalash,
 )
 from demo_data import (
+    demo_hisobot_tayyorlash,
     demo_kam_qoldiq_tovarlar,
     demo_katalog_sahifa_olish,
     demo_katalog_tovar_olish,
+    demo_manbalar_royxati,
     demo_raqobatchilarni_olish,
 )
 from locales import t, valyuta_yorligi, vaqt_mintaqasi_yorligi
@@ -99,8 +101,10 @@ jarayon_qulfi = asyncio.Lock()
 rejalashtiruvchi: AsyncIOScheduler | None = None
 ruxsat_etilgan_chat_id: str = ""
 bot_obyekti: Bot | None = None
-# Demo foydalanuvchilar tili faqat xotirada saqlanadi (SQLite bazasiga yozilmaydi — Zero-Leak)
+# Demo foydalanuvchilar sozlamalari faqat xotirada (RAM) saqlanadi — SQLite ga yozilmaydi (Zero-Leak)
 _DEMO_FOYDALANUVCHI_TILLARI: dict[str, str] = {}
+_DEMO_FOYDALANUVCHI_TZ: dict[str, str] = {}
+_DEMO_FOYDALANUVCHI_VAQTLARI: dict[str, str] = {}
 _MAKS_DEMO_SESSIYALAR = 5000
 
 
@@ -158,12 +162,36 @@ def ruxsat_bormi(chat_id: int | str) -> bool:
 
 
 def _demo_tilni_saqlash(chat_id: int | str, lang: str) -> str:
-    """Demo foydalanuvchi tilini bazaga tegmasdan faqat RAM da saqlaydi."""
+    """Demo foydalanuvchi tili va unga mos vaqt mintaqasini bazaga tegmasdan faqat RAM da saqlaydi."""
     if len(_DEMO_FOYDALANUVCHI_TILLARI) >= _MAKS_DEMO_SESSIYALAR:
         _DEMO_FOYDALANUVCHI_TILLARI.clear()
+        _DEMO_FOYDALANUVCHI_TZ.clear()
+        _DEMO_FOYDALANUVCHI_VAQTLARI.clear()
     toza = "ru" if str(lang).strip().lower() == "ru" else "uz"
-    _DEMO_FOYDALANUVCHI_TILLARI[str(chat_id)] = toza
+    kalit = str(chat_id)
+    _DEMO_FOYDALANUVCHI_TILLARI[kalit] = toza
+    _DEMO_FOYDALANUVCHI_TZ[kalit] = vaqt_mintaqasi_nomi(lang=toza)
     return toza
+
+
+def _demo_tz_saqlash(chat_id: int | str, tz_nomi: str) -> str:
+    """Demo foydalanuvchi vaqt mintaqasini faqat RAM da saqlaydi."""
+    toza_tz = MOSKVA_TIMEZONE if str(tz_nomi).strip() == MOSKVA_TIMEZONE else STANDART_TIMEZONE
+    _DEMO_FOYDALANUVCHI_TZ[str(chat_id)] = toza_tz
+    return toza_tz
+
+
+def _demo_vaqt_saqlash(chat_id: int | str, vaqt_matni: str) -> str:
+    """Demo foydalanuvchi jadval vaqtini faqat RAM da saqlaydi (APScheduler ga tegmaydi)."""
+    _DEMO_FOYDALANUVCHI_VAQTLARI[str(chat_id)] = vaqt_matni
+    return vaqt_matni
+
+
+def _demo_vaqt_olish(chat_id: int | str | None) -> str:
+    """Demo foydalanuvchining RAM dagi jadval vaqtini qaytaradi."""
+    if chat_id is None:
+        return STANDART_VAQT
+    return _DEMO_FOYDALANUVCHI_VAQTLARI.get(str(chat_id), STANDART_VAQT)
 
 
 def _foydalanuvchi_tili(chat_id: int | str, db_yoli: str | None = None) -> str:
@@ -178,8 +206,11 @@ def _foydalanuvchi_vaqt_mintaqasi(
     lang: str | None = None,
     db_yoli: str | None = None,
 ) -> str:
-    """Admin uchun SQLite dan, Demo foydalanuvchi uchun tilga mos standart vaqt mintaqasini qaytaradi."""
+    """Admin uchun SQLite dan, Demo foydalanuvchi uchun RAM dan vaqt mintaqasini qaytaradi."""
     if chat_id is not None and not adminmi(chat_id):
+        saqlangan = _DEMO_FOYDALANUVCHI_TZ.get(str(chat_id))
+        if saqlangan in (STANDART_TIMEZONE, MOSKVA_TIMEZONE):
+            return saqlangan
         til = lang or _foydalanuvchi_tili(chat_id)
         return vaqt_mintaqasi_nomi(lang=til)
     egasi = chat_id if chat_id is not None else ruxsat_etilgan_chat_id
@@ -189,7 +220,7 @@ def _foydalanuvchi_vaqt_mintaqasi(
 
 
 def demo_asosiy_tugmalar(lang: str = "uz") -> InlineKeyboardMarkup:
-    """🎭 Demo-rejim uchun xavfsiz, faqat o'qish va kalkulyator tugmalari."""
+    """🎭 Demo-rejim uchun barcha bo'limlar ko'rinadigan to'liq interaktiv tugmalar (Zero-Leak)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -200,9 +231,29 @@ def demo_asosiy_tugmalar(lang: str = "uz") -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text=t("btn_recheck_now", lang),
+                    callback_data="qayta_tekshirish",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_set_time", lang),
+                    callback_data="vaqt_ornatish",
+                ),
+                InlineKeyboardButton(
+                    text=t("btn_add_source", lang),
+                    callback_data="manba_qoshish",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_sources", lang),
+                    callback_data="manbalar_royxati",
+                ),
+                InlineKeyboardButton(
                     text=t("btn_demo_stock_alerts", lang),
                     callback_data="demo_qoldiqlar",
-                )
+                ),
             ],
             [
                 InlineKeyboardButton(
@@ -214,20 +265,27 @@ def demo_asosiy_tugmalar(lang: str = "uz") -> InlineKeyboardMarkup:
     )
 
 
-def _demo_bosh_menyu_matni(lang: str = "uz") -> str:
+def _demo_bosh_menyu_matni(
+    lang: str = "uz",
+    chat_id: int | str | None = None,
+) -> str:
     """🎭 Demo-rejim bosh menyu matni (real bazaga mutlaqo murojaat qilmaydi)."""
     _, katalog_soni, _ = demo_katalog_sahifa_olish(sahifa=1, sahifa_hajmi=5, lang=lang)
     kam_soni = len(demo_kam_qoldiq_tovarlar(chegara=5, lang=lang))
-    tz_nomi = vaqt_mintaqasi_nomi(lang=lang)
+    manbalar_soni = len(demo_manbalar_royxati())
+    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(chat_id, lang=lang) if chat_id is not None else vaqt_mintaqasi_nomi(lang=lang)
     tz_yorliq = html.escape(vaqt_mintaqasi_yorligi(tz_nomi, lang))
     hozir = html.escape(hozirgi_vaqt(lang=lang, tz_nomi=tz_nomi).strftime("%H:%M"))
+    jadval_vaqt = html.escape(_demo_vaqt_olish(chat_id))
     return t(
         "demo_main_menu_text",
         lang,
         demo_banner=t("demo_banner", lang),
+        schedule_time=jadval_vaqt,
         now_time=hozir,
         timezone=tz_yorliq,
         catalog_count=katalog_soni,
+        sources_count=manbalar_soni,
         low_stock=kam_soni,
     )
 
@@ -240,7 +298,7 @@ def _menyu_matni_va_tugmalar(
     """Admin uchun real bosh menyuni, begona foydalanuvchi uchun Demo-rejim menyusini qaytaradi."""
     if adminmi(chat_id):
         return _bosh_menyu_matni(lang, chat_id=chat_id, db_yoli=db_yoli), asosiy_tugmalar(lang)
-    return _demo_bosh_menyu_matni(lang), demo_asosiy_tugmalar(lang)
+    return _demo_bosh_menyu_matni(lang, chat_id=chat_id), demo_asosiy_tugmalar(lang)
 
 
 def til_tanlash_tugmalari(lang: str = "uz") -> InlineKeyboardMarkup:
@@ -420,15 +478,14 @@ def mening_katalogim_tugmalari(
             InlineKeyboardButton(text=t("btn_next_page", lang), callback_data=keyingi_cb),
         ]
     )
-    if not demo_rejim:
-        qatorlar.append(
-            [
-                InlineKeyboardButton(
-                    text=t("btn_refresh_catalog", lang),
-                    callback_data="katalog_yangilash",
-                )
-            ]
-        )
+    qatorlar.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_refresh_catalog", lang),
+                callback_data="katalog_yangilash",
+            )
+        ]
+    )
     qatorlar.append(
         [
             InlineKeyboardButton(text=t("btn_main_menu", lang), callback_data="bosh_menyu"),
@@ -501,44 +558,40 @@ def raqobatchilar_menyu_tugmalari(
     lang: str = "uz",
     demo_rejim: bool = False,
 ) -> InlineKeyboardMarkup:
-    """👀 Raqobatchilar bo'limidagi boshqaruv tugmalari (Demo-rejimda faqat o'qish/qaytish)."""
-    qatorlar: list[list[InlineKeyboardButton]] = []
-    if not demo_rejim:
-        qatorlar.extend(
+    """👀 Raqobatchilar bo'limidagi barcha 3 ta boshqaruv tugmasi + ortga."""
+    _ = demo_rejim
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
-                [
-                    InlineKeyboardButton(
-                        text=t("btn_add_competitor", lang),
-                        callback_data=f"raq_qoshish:{katalog_id}:{sahifa}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=t("btn_check_competitors", lang),
-                        callback_data=f"raq_tekshir:{katalog_id}:{sahifa}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=t("btn_delete_competitor", lang),
-                        callback_data=f"raq_ochir_menyu:{katalog_id}:{sahifa}",
-                    )
-                ],
-            ]
-        )
-    qatorlar.append(
-        [
-            InlineKeyboardButton(
-                text=t("btn_back_to_product", lang),
-                callback_data=f"kat_tovar:{katalog_id}:{sahifa}",
-            ),
-            InlineKeyboardButton(
-                text=t("btn_back_to_catalog", lang),
-                callback_data=f"mening_katalogim:{sahifa}",
-            ),
+                InlineKeyboardButton(
+                    text=t("btn_add_competitor", lang),
+                    callback_data=f"raq_qoshish:{katalog_id}:{sahifa}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_check_competitors", lang),
+                    callback_data=f"raq_tekshir:{katalog_id}:{sahifa}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_delete_competitor", lang),
+                    callback_data=f"raq_ochir_menyu:{katalog_id}:{sahifa}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_back_to_product", lang),
+                    callback_data=f"kat_tovar:{katalog_id}:{sahifa}",
+                ),
+                InlineKeyboardButton(
+                    text=t("btn_back_to_catalog", lang),
+                    callback_data=f"mening_katalogim:{sahifa}",
+                ),
+            ],
         ]
     )
-    return InlineKeyboardMarkup(inline_keyboard=qatorlar)
 
 
 def raqobatchi_ochirish_tugmalari(
@@ -1117,7 +1170,7 @@ async def start_buyrugi(message: Message, state: FSMContext) -> None:
 
     til = _foydalanuvchi_tili(chat_id)
     await message.answer(
-        _demo_bosh_menyu_matni(til),
+        _demo_bosh_menyu_matni(til, chat_id=chat_id),
         parse_mode="HTML",
         reply_markup=demo_asosiy_tugmalar(til),
     )
@@ -1157,7 +1210,7 @@ async def tilni_saqlash_tugmasi(callback: CallbackQuery, state: FSMContext) -> N
         menyu_matn, tugmalar = _bosh_menyu_matni(yangi_til, chat_id=chat_id), asosiy_tugmalar(yangi_til)
     else:
         yangi_til = _demo_tilni_saqlash(chat_id, tanlangan)
-        menyu_matn, tugmalar = _demo_bosh_menyu_matni(yangi_til), demo_asosiy_tugmalar(yangi_til)
+        menyu_matn, tugmalar = _demo_bosh_menyu_matni(yangi_til, chat_id=chat_id), demo_asosiy_tugmalar(yangi_til)
 
     await callback.answer()
     await callback.message.answer(
@@ -1291,16 +1344,26 @@ async def sahifa_chegara_tugmasi(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "katalog_yangilash")
 async def katalogni_yangilash_tugmasi(callback: CallbackQuery, state: FSMContext) -> None:
-    """🔄 Katalogni yangilash: FAQAT Admin uchun (Uzum API). Demo-rejimda bloklanadi."""
+    """🔄 Katalogni yangilash: Admin -> Uzum API, Demo -> namunaviy yangilash + Stock Alert."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
     await state.clear()
+
+    if not adminmi(chat_id):
+        await callback.answer(t("catalog_refreshing_toast", til))
+        tovarlar, soni, jami_sahifalar = demo_katalog_sahifa_olish(sahifa=1, sahifa_hajmi=5, lang=til)
+        kam_qoldiqlar = demo_kam_qoldiq_tovarlar(chegara=5, lang=til)
+        await callback.message.answer(
+            f"{t('demo_banner', til)}\n\n{t('demo_catalog_refreshed', til, count=soni, total_pages=jami_sahifalar)}",
+            parse_mode="HTML",
+            reply_markup=mening_katalogim_tugmalari(tovarlar, 1, jami_sahifalar, lang=til, demo_rejim=True),
+        )
+        if kam_qoldiqlar and callback.bot is not None:
+            await qoldiq_ogohlantirish_yuborish(callback.bot, chat_id, kam_qoldiqlar, lang=til)
+        return
     await callback.answer(t("catalog_refreshing_toast", til))
     holat = await callback.message.answer(t("catalog_refreshing_msg", til))
 
@@ -1637,15 +1700,12 @@ async def raqobatchi_havolasini_saqlash_va_tekshirish(message: Message, state: F
 
 @router.callback_query(F.data.startswith("raq_tekshir:"))
 async def raqobatchilar_narxini_hozir_tekshirish(callback: CallbackQuery, state: FSMContext) -> None:
-    """🔄 Narxlarni hozir tekshirish (FAQAT Admin)."""
+    """🔄 Narxlarni hozir tekshirish: Admin -> Playwright parser, Demo -> namuna + qizil signal."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
     await state.clear()
     qismlar = (callback.data or "").split(":")
     if len(qismlar) < 2 or not qismlar[1].isdigit():
@@ -1654,6 +1714,30 @@ async def raqobatchilar_narxini_hozir_tekshirish(callback: CallbackQuery, state:
 
     katalog_id = int(qismlar[1])
     sahifa = int(qismlar[2]) if len(qismlar) >= 3 and qismlar[2].isdigit() else 1
+
+    if not adminmi(chat_id):
+        tovar = demo_katalog_tovar_olish(katalog_id, lang=til)
+        if not tovar:
+            await callback.answer(t("product_not_found", til), show_alert=True)
+            return
+        raqobatchilar = demo_raqobatchilarni_olish(int(tovar["product_id"]), lang=til)
+        await callback.answer(t("comp_checking_toast", til))
+        await callback.message.answer(
+            t("demo_comp_refreshed", til)
+            + raqobatchilar_royxat_matni(tovar, raqobatchilar, lang=til),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=raqobatchilar_menyu_tugmalari(katalog_id, sahifa, lang=til, demo_rejim=True),
+        )
+        for r in raqobatchilar:
+            if float(r["yangi_narx"]) > 0 and float(r["yangi_narx"]) < float(tovar["narxi"]):
+                await callback.message.answer(
+                    raqobatchi_arzonroq_ogohlantirish_matni(tovar, r, lang=til),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+        return
+
     tovar = katalog_tovar_olish(katalog_id)
     if not tovar:
         await callback.answer(t("product_not_found", til), show_alert=True)
@@ -1765,16 +1849,56 @@ async def raqobatchini_bazadan_ochirish(callback: CallbackQuery, state: FSMConte
 
 @router.callback_query(F.data == "qayta_tekshirish")
 async def hozir_qayta_tekshirish(callback: CallbackQuery, state: FSMContext) -> None:
-    """🔄 Hozir qayta tekshirish tugmasi (FAQAT Admin)."""
+    """🔄 Hozir qayta tekshirish: Admin -> real monitoring, Demo -> namunaviy tahlil + real Demo Excel."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
     await state.clear()
+
+    if not adminmi(chat_id):
+        tz_nomi = _foydalanuvchi_vaqt_mintaqasi(chat_id, lang=til)
+        await callback.answer(t("scan_started_toast", til))
+        holat_xabari = await callback.message.answer(t("demo_scan_started", til))
+        excel_fayl: str | None = None
+        try:
+            hisobot_matni, excel_fayl = await asyncio.to_thread(
+                demo_hisobot_tayyorlash,
+                til,
+                tz_nomi,
+            )
+            fayl_yoli = Path(excel_fayl)
+            for bolak in _matnni_bolish(hisobot_matni):
+                await callback.message.answer(bolak)
+
+            sana_vaqt = hozirgi_vaqt(lang=til, tz_nomi=tz_nomi).strftime("%Y-%m-%d %H:%M")
+            izoh = t(
+                "excel_caption",
+                til,
+                filename=fayl_yoli.name,
+                timestamp=sana_vaqt,
+                timezone=vaqt_mintaqasi_yorligi(tz_nomi, til),
+                zero_storage_rule=t("zero_storage_rule", til),
+            )
+            if callback.bot is not None:
+                await callback.bot.send_document(
+                    chat_id=chat_id,
+                    document=FSInputFile(path=fayl_yoli, filename=fayl_yoli.name),
+                    caption=izoh,
+                    reply_markup=demo_asosiy_tugmalar(til),
+                )
+        finally:
+            if excel_fayl and os.path.exists(excel_fayl):
+                try:
+                    os.remove(excel_fayl)
+                except OSError:
+                    pass
+            try:
+                await holat_xabari.delete()
+            except Exception:
+                pass
+        return
 
     if jarayon_qulfi.locked():
         await callback.answer(t("scan_in_progress_alert", til), show_alert=True)
@@ -1799,29 +1923,34 @@ async def hozir_qayta_tekshirish(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "vaqt_ornatish")
 async def vaqtni_ornatish_menyusi(callback: CallbackQuery, state: FSMContext) -> None:
-    """⏰ Vaqtni o'rnatish tugmasi (FAQAT Admin)."""
+    """⏰ Vaqtni o'rnatish: Admin -> SQLite/APScheduler, Demo -> RAM sinov."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
-    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(callback.message.chat.id, lang=til)
+    chat_id = callback.message.chat.id
+    is_demo = not adminmi(chat_id)
+    til = _foydalanuvchi_tili(chat_id)
+    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(chat_id, lang=til)
     await state.clear()
     await callback.answer()
-    joriy_vaqt = html.escape(sozlama_olish(JADVAL_KALITI, STANDART_VAQT) or STANDART_VAQT)
+    joriy_vaqt = html.escape(
+        _demo_vaqt_olish(chat_id)
+        if is_demo
+        else (sozlama_olish(JADVAL_KALITI, STANDART_VAQT) or STANDART_VAQT)
+    )
     tz_yorliq = html.escape(vaqt_mintaqasi_yorligi(tz_nomi, til))
     hozir = html.escape(hozirgi_vaqt(lang=til, tz_nomi=tz_nomi).strftime("%H:%M"))
+    matn = t(
+        "choose_time_prompt",
+        til,
+        current_time=joriy_vaqt,
+        timezone=tz_yorliq,
+        now_time=hozir,
+    )
+    if is_demo:
+        matn = f"{t('demo_banner', til)}\n\n{matn}"
     await callback.message.answer(
-        t(
-            "choose_time_prompt",
-            til,
-            current_time=joriy_vaqt,
-            timezone=tz_yorliq,
-            now_time=hozir,
-        ),
+        matn,
         parse_mode="HTML",
         reply_markup=vaqt_tanlash_tugmalari(til, faol_tz=tz_nomi),
     )
@@ -1829,18 +1958,35 @@ async def vaqtni_ornatish_menyusi(callback: CallbackQuery, state: FSMContext) ->
 
 @router.callback_query(F.data.startswith("set_tz:"))
 async def vaqt_mintaqasini_saqlash(callback: CallbackQuery, state: FSMContext) -> None:
-    """🇺🇿 Toshkent / 🇷🇺 Moskva vaqt mintaqasi tugmasi (FAQAT Admin)."""
+    """🇺🇿 Toshkent / 🇷🇺 Moskva vaqt mintaqasi tugmasi (Admin -> DB+APScheduler, Demo -> RAM)."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
     await state.clear()
     tanlangan_tz = (callback.data or f"set_tz:{STANDART_TIMEZONE}").split("set_tz:", 1)[-1]
-    yangi_tz = set_timezone(callback.message.chat.id, tanlangan_tz)
+
+    if not adminmi(chat_id):
+        yangi_tz = _demo_tz_saqlash(chat_id, tanlangan_tz)
+        joriy_vaqt = _demo_vaqt_olish(chat_id)
+        tz_yorliq = vaqt_mintaqasi_yorligi(yangi_tz, til)
+        hozir = hozirgi_vaqt(lang=til, tz_nomi=yangi_tz).strftime("%H:%M")
+        await callback.answer(t("tz_saved_toast", til, timezone=tz_yorliq))
+        await callback.message.answer(
+            t(
+                "demo_tz_saved_msg",
+                til,
+                timezone=html.escape(tz_yorliq),
+                now_time=html.escape(hozir),
+                schedule_time=html.escape(joriy_vaqt),
+            ),
+            parse_mode="HTML",
+            reply_markup=vaqt_tanlash_tugmalari(til, faol_tz=yangi_tz),
+        )
+        return
+
+    yangi_tz = set_timezone(chat_id, tanlangan_tz)
     joriy_vaqt = sozlama_olish(JADVAL_KALITI, STANDART_VAQT) or STANDART_VAQT
     jadvalni_yangilash(joriy_vaqt, lang=til, tz_nomi=yangi_tz)
 
@@ -1862,22 +2008,34 @@ async def vaqt_mintaqasini_saqlash(callback: CallbackQuery, state: FSMContext) -
 
 @router.callback_query(F.data.startswith("vaqt:"))
 async def tayyor_vaqtni_saqlash(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tayyor tugmalardan (08:00..21:00) birini saqlaydi (FAQAT Admin)."""
+    """Tayyor tugmalardan (08:00..21:00) birini saqlaydi (Admin -> DB+APScheduler, Demo -> RAM)."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
-    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(callback.message.chat.id, lang=til)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
+    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(chat_id, lang=til)
     await state.clear()
     tanlangan = (callback.data or "").split("vaqt:", 1)[-1]
     toza_vaqt = vaqt_formatini_tekshirish(tanlangan)
 
     if not toza_vaqt:
         await callback.answer(t("invalid_time_toast", til), show_alert=True)
+        return
+
+    if not adminmi(chat_id):
+        _demo_vaqt_saqlash(chat_id, toza_vaqt)
+        await callback.answer(t("time_saved_toast", til, time=toza_vaqt))
+        await callback.message.answer(
+            t(
+                "demo_time_saved_msg",
+                til,
+                time=html.escape(toza_vaqt),
+                timezone=html.escape(vaqt_mintaqasi_yorligi(tz_nomi, til)),
+            ),
+            parse_mode="HTML",
+            reply_markup=demo_asosiy_tugmalar(til),
+        )
         return
 
     jadvalni_yangilash(toza_vaqt, lang=til, tz_nomi=tz_nomi)
@@ -1896,12 +2054,8 @@ async def tayyor_vaqtni_saqlash(callback: CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "boshqa_vaqt")
 async def boshqa_vaqt_sorash(callback: CallbackQuery, state: FSMContext) -> None:
-    """✍️ Boshqa vaqt yozish tugmasi (FAQAT Admin)."""
+    """✍️ Boshqa vaqt yozish tugmasi (Admin va Demo uchun ishlaydi)."""
     if callback.message is None:
-        return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
         return
 
     til = _foydalanuvchi_tili(callback.message.chat.id)
@@ -1916,15 +2070,10 @@ async def boshqa_vaqt_sorash(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.message(VaqtKiritishHolati.vaqt_kutilmoqda)
 async def qolda_kiritilgan_vaqtni_saqlash(message: Message, state: FSMContext) -> None:
-    """Foydalanuvchi qo'lda yozgan vaqtni tekshirib, bazaga va jadvalga saqlaydi (FAQAT Admin)."""
-    if not adminmi(message.chat.id):
-        await state.clear()
-        til = _foydalanuvchi_tili(message.chat.id)
-        await message.answer(t("demo_readonly_alert", til), reply_markup=demo_asosiy_tugmalar(til))
-        return
-
-    til = _foydalanuvchi_tili(message.chat.id)
-    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(message.chat.id, lang=til)
+    """Foydalanuvchi qo'lda yozgan vaqtni saqlaydi (Admin -> DB+APScheduler, Demo -> RAM)."""
+    chat_id = message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
+    tz_nomi = _foydalanuvchi_vaqt_mintaqasi(chat_id, lang=til)
     toza_vaqt = vaqt_formatini_tekshirish(message.text or "")
     if not toza_vaqt:
         await message.answer(
@@ -1934,8 +2083,22 @@ async def qolda_kiritilgan_vaqtni_saqlash(message: Message, state: FSMContext) -
         )
         return
 
-    jadvalni_yangilash(toza_vaqt, lang=til, tz_nomi=tz_nomi)
     await state.clear()
+    if not adminmi(chat_id):
+        _demo_vaqt_saqlash(chat_id, toza_vaqt)
+        await message.answer(
+            t(
+                "demo_time_saved_msg",
+                til,
+                time=html.escape(toza_vaqt),
+                timezone=html.escape(vaqt_mintaqasi_yorligi(tz_nomi, til)),
+            ),
+            parse_mode="HTML",
+            reply_markup=demo_asosiy_tugmalar(til),
+        )
+        return
+
+    jadvalni_yangilash(toza_vaqt, lang=til, tz_nomi=tz_nomi)
     await message.answer(
         t(
             "time_saved_msg",
@@ -1950,12 +2113,12 @@ async def qolda_kiritilgan_vaqtni_saqlash(message: Message, state: FSMContext) -
 
 @router.callback_query(F.data == "manba_qoshish")
 async def manba_qoshish_sorash(callback: CallbackQuery, state: FSMContext) -> None:
-    """➕ Sayt/Mahsulot qo'shish tugmasi (FAQAT Admin)."""
+    """➕ Sayt/Mahsulot qo'shish tugmasi (FAQAT Admin; Demo da xavfsiz ogohlantirish)."""
     if callback.message is None:
         return
     if not adminmi(callback.message.chat.id):
         til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
+        await callback.answer(t("demo_sources_readonly", til), show_alert=True)
         return
 
     til = _foydalanuvchi_tili(callback.message.chat.id)
@@ -2016,17 +2179,24 @@ async def manba_urlni_saqlash(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "manbalar_royxati")
 async def manbalarni_korsatish(callback: CallbackQuery, state: FSMContext) -> None:
-    """📋 Manbalar tugmasi (FAQAT Admin)."""
+    """📋 Manbalar tugmasi: Admin -> real DB, Demo -> namunaviy manbalar (Zero-Leak)."""
     if callback.message is None:
         return
-    if not adminmi(callback.message.chat.id):
-        til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
-        return
 
-    til = _foydalanuvchi_tili(callback.message.chat.id)
+    chat_id = callback.message.chat.id
+    til = _foydalanuvchi_tili(chat_id)
     await state.clear()
     await callback.answer()
+
+    if not adminmi(chat_id):
+        demo_manbalar = demo_manbalar_royxati()
+        await callback.message.answer(
+            f"{t('demo_banner', til)}\n\n{_manbalar_matni(demo_manbalar, lang=til)}",
+            parse_mode="HTML",
+            reply_markup=manbalar_tugmalari(demo_manbalar, lang=til),
+        )
+        return
+
     manbalar = manbalar_royxati()
     await callback.message.answer(
         _manbalar_matni(manbalar, lang=til),
@@ -2037,12 +2207,12 @@ async def manbalarni_korsatish(callback: CallbackQuery, state: FSMContext) -> No
 
 @router.callback_query(F.data.startswith("manba_ochir:"))
 async def manbani_ochirish_tugmasi(callback: CallbackQuery, state: FSMContext) -> None:
-    """🗑 O'chirish tugmasi (FAQAT Admin)."""
+    """🗑 O'chirish tugmasi (FAQAT Admin; Demo da xavfsiz ogohlantirish)."""
     if callback.message is None:
         return
     if not adminmi(callback.message.chat.id):
         til = _foydalanuvchi_tili(callback.message.chat.id)
-        await callback.answer(t("demo_readonly_alert", til), show_alert=True)
+        await callback.answer(t("demo_sources_readonly", til), show_alert=True)
         return
 
     til = _foydalanuvchi_tili(callback.message.chat.id)

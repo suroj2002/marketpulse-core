@@ -191,22 +191,49 @@ TEXTS: dict[str, dict[str, str]] = {
         "btn_back_to_product": "🔙 Tovarga qaytish",
         # Demo-rejim (Portfolio mijozlari uchun xavfsiz rejim)
         "demo_banner": (
-            "🎭 <b>Siz Demo-rejimdasiz.</b> Bu yerda namunaviy tovarlar orqali katalog, "
-            "aqlli kalkulyator va raqobatchilar monitoringini sinab ko'rishingiz mumkin."
+            "🎭 <b>Siz Demo-rejimdasiz.</b> Bu yerda namunaviy tovarlar orqali barcha bo'limlarni — "
+            "katalog, aqlli kalkulyator, Excel hisobot, jadval va raqobatchilar monitoringini "
+            "sinab ko'rishingiz mumkin."
         ),
         "demo_main_menu_text": (
             "{demo_banner}\n\n"
             "🚀 <b>MarketPulse Core — Demo Panel</b>\n\n"
-            "🕒 Hozirgi vaqt: <b>{now_time}</b> ({timezone})\n"
-            "📦 Namunaviy tovarlar: <b>{catalog_count} ta</b> | "
-            "⚠️ Kam qoldiq (&lt;5): <b>{low_stock} ta</b>\n"
-            "🔒 Holat: <b>Faqat ko'rish va hisoblash (Zero-Leak)</b>\n\n"
-            "Imkoniyatlarni sinab ko'rish uchun quyidagi tugmalardan birini tanlang:"
+            "⏰ Demo kunlik hisobot vaqti: <b>{schedule_time}</b> ({timezone})\n"
+            "🕒 Hozirgi vaqt: <b>{now_time}</b>\n"
+            "📦 Namunaviy tovarlar: <b>{catalog_count} ta</b> | 🌐 Veb-manbalar: <b>{sources_count} ta</b>\n"
+            "⚠️ Kam qoldiq (&lt;5): <b>{low_stock} ta</b> | 🔒 Rejim: <b>Zero-Leak (Demo)</b>\n\n"
+            "Barcha imkoniyatlarni sinab ko'rish uchun quyidagi tugmalardan birini tanlang:"
         ),
         "btn_demo_stock_alerts": "📉 Qoldiqlar nazorati (Demo)",
         "demo_readonly_alert": (
-            "🎭 Demo-rejimda faqat ko'rish va Aqlli kalkulyator ishlaydi. "
-            "Real do'kon bazasi va API ga o'zgartirish kiritish cheklangan."
+            "🎭 Demo-rejimda real do'kon bazasi va API ga o'zgartirish kiritish cheklangan. "
+            "Barcha bo'limlarni namunaviy ma'lumotlarda bemalol sinab ko'rishingiz mumkin."
+        ),
+        "demo_scan_started": (
+            "🎭 Demo-rejim: namunaviy ma'lumotlar asosida tahlil va dizaynli Excel hisobot tayyorlanmoqda..."
+        ),
+        "demo_catalog_refreshed": (
+            "✅ <b>Demo-katalog yangilandi!</b> ({count} ta namunaviy tovar)\n"
+            "📄 Sahifa: <b>1/{total_pages}</b>\n\n"
+            "Tovarni tanlang:"
+        ),
+        "demo_comp_refreshed": (
+            "✅ <b>Demo-tekshiruv yakunlandi!</b>\n"
+            "Quyida raqobatchilar narxi va sizdan arzonroq sotuv bo'lganda keladigan "
+            "qizil signal namunasini ko'rishingiz mumkin:\n\n"
+        ),
+        "demo_tz_saved_msg": (
+            "🎭 <b>Demo-rejim:</b> Vaqt mintaqasi yangilandi: <b>{timezone}</b>\n"
+            "🕒 Hozirgi vaqt: <b>{now_time}</b>\n"
+            "⏰ Demo hisobot vaqti: <b>{schedule_time}</b>"
+        ),
+        "demo_time_saved_msg": (
+            "🎭 <b>Demo-rejim:</b> Kunlik hisobot vaqti <b>{time}</b> ({timezone}) qilib sinab ko'rildi!\n"
+            "<i>Real versiyada bu vaqt avtomatik jadvalga (APScheduler) ulanadi.</i>"
+        ),
+        "demo_sources_readonly": (
+            "🎭 Demo-rejimda namunaviy veb-manbalarni ko'rishingiz mumkin. "
+            "Real havola qo'shish va o'chirish faqat Admin rejimida ishlaydi."
         ),
         # Aqlli kalkulyator
         "calc_title": "🧮 <b>Aqlli kalkulyator</b>",
@@ -504,22 +531,49 @@ TEXTS: dict[str, dict[str, str]] = {
         "btn_back_to_product": "🔙 Назад к товару",
         # Demo-rejim (Portfolio mijozlari uchun xavfsiz rejim)
         "demo_banner": (
-            "🎭 <b>Вы в Демо-режиме.</b> Здесь вы можете протестировать каталог, "
-            "умный калькулятор и мониторинг конкурентов на демонстрационных товарах."
+            "🎭 <b>Вы в Демо-режиме.</b> Здесь вы можете протестировать все разделы — "
+            "каталог, умный калькулятор, Excel-отчёт, расписание и мониторинг конкурентов "
+            "на демонстрационных товарах."
         ),
         "demo_main_menu_text": (
             "{demo_banner}\n\n"
             "🚀 <b>MarketPulse Core — Демо-панель</b>\n\n"
-            "🕒 Текущее время: <b>{now_time}</b> ({timezone})\n"
-            "📦 Демо-товаров в каталоге: <b>{catalog_count} шт.</b> | "
-            "⚠️ Низкий остаток (&lt;5): <b>{low_stock} шт.</b>\n"
-            "🔒 Режим: <b>Только просмотр и расчёты (Zero-Leak)</b>\n\n"
-            "Выберите раздел ниже, чтобы протестировать возможности бота:"
+            "⏰ Демо-расписание отчёта: <b>{schedule_time}</b> ({timezone})\n"
+            "🕒 Текущее время: <b>{now_time}</b>\n"
+            "📦 Демо-товаров: <b>{catalog_count} шт.</b> | 🌐 Веб-источников: <b>{sources_count} шт.</b>\n"
+            "⚠️ Низкий остаток (&lt;5): <b>{low_stock} шт.</b> | 🔒 Режим: <b>Zero-Leak (Демо)</b>\n\n"
+            "Выберите любой раздел ниже, чтобы протестировать возможности бота:"
         ),
         "btn_demo_stock_alerts": "📉 Контроль остатков (Демо)",
         "demo_readonly_alert": (
-            "🎭 В Демо-режиме доступны только просмотр и Умный калькулятор. "
-            "Доступ к реальной базе, API и изменению данных отключён."
+            "🎭 В Демо-режиме изменение реальной базы и запуск API отключены. "
+            "Все разделы можно свободно протестировать на демонстрационных данных."
+        ),
+        "demo_scan_started": (
+            "🎭 Демо-режим: формируем аналитику и готовый Excel-отчёт на демонстрационных данных..."
+        ),
+        "demo_catalog_refreshed": (
+            "✅ <b>Демо-каталог обновлён!</b> ({count} демонстрационных товаров)\n"
+            "📄 Страница: <b>1/{total_pages}</b>\n\n"
+            "Выберите товар:"
+        ),
+        "demo_comp_refreshed": (
+            "✅ <b>Демо-проверка завершена!</b>\n"
+            "Ниже показаны цены конкурентов и пример красного сигнала, когда конкурент "
+            "продаёт дешевле вас:\n\n"
+        ),
+        "demo_tz_saved_msg": (
+            "🎭 <b>Демо-режим:</b> Часовой пояс обновлён: <b>{timezone}</b>\n"
+            "🕒 Текущее время: <b>{now_time}</b>\n"
+            "⏰ Время демо-отчёта: <b>{schedule_time}</b>"
+        ),
+        "demo_time_saved_msg": (
+            "🎭 <b>Демо-режим:</b> Время ежедневного отчёта <b>{time}</b> ({timezone}) успешно протестировано!\n"
+            "<i>В боевом режиме оно автоматически подключается к расписанию (APScheduler).</i>"
+        ),
+        "demo_sources_readonly": (
+            "🎭 В Демо-режиме можно просматривать примеры веб-источников. "
+            "Добавление и удаление реальных ссылок доступно только в режиме администратора."
         ),
         # Aqlli kalkulyator
         "calc_title": "🧮 <b>Умный калькулятор</b>",
